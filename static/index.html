@@ -4,7 +4,7 @@
 		<title>You FPS</title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
-		<link type="text/css" rel="stylesheet" href="lib/main.css">
+		<link type="text/css" rel="stylesheet" href="/static/lib/main.css">
 		<style>
 			body {
 				background-color: #bfd1e5;
@@ -21,13 +21,13 @@
 
 		<script type="module">
 
-			import * as THREE from './lib/three.module.js';
+			import * as THREE from '/static/lib/three.module.js';
 
-			import Stats from './lib/stats.module.js';
+			import Stats from '/static/lib/stats.module.js';
 
-			import { FirstPersonControls } from './lib/FirstPersonControls.js';
-			import { ImprovedNoise } from './lib/ImprovedNoise.js';
-			import * as BufferGeometryUtils from './lib/BufferGeometryUtils.js';
+			import { FirstPersonControls } from '/static/lib/FirstPersonControls.js';
+			import { ImprovedNoise } from '/static/lib/ImprovedNoise.js';
+			import * as BufferGeometryUtils from '/static/lib/BufferGeometryUtils.js';
 
 			let container, stats;
 			let camera, controls, scene, renderer;
@@ -74,6 +74,10 @@
                     quality *= 4;
                 }
 
+                for(let i = width/4; i < width*3/4; i++) for(let j = height/4; j < height*3/4; j++) {
+                    data[i+j*width] = 0;
+                }
+
                 return data;
             }
 
@@ -92,7 +96,7 @@
             function initGround(scene) {
                 const geometry = generateGroundGeometry();
 
-				const texture = new THREE.TextureLoader().load('textures/atlas.png');
+				const texture = new THREE.TextureLoader().load('/static/textures/atlas.png');
 				texture.magFilter = THREE.NearestFilter;
 
 				const mesh = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial( { map: texture, side: THREE.DoubleSide }));
