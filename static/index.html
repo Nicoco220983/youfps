@@ -31,16 +31,21 @@
 
 			let container, stats;
 			let camera, controls, scene, renderer;
+            let websocket;
+            let bodies = {};
 
 			const worldWidth = 128, worldDepth = 128;
+            const BOX_SIZE = 100;
 			const data = generateHeight( worldWidth, worldDepth );
 
 			const clock = new THREE.Clock();
 
-			init();
-			animate();
+            async function main() {
+                await init();
+                animate();
+            }
 
-			function init() {
+			async function init() {
 
 				container = document.getElementById( 'container' );
                 scene = initScene();
@@ -52,6 +57,8 @@
                 stats = initStats(container);
 
 				window.addEventListener('resize', onWindowResize);
+
+                websocket = await initWebsocket();
 			}
 
             function generateHeight( width, height ) {
@@ -89,7 +96,8 @@
 
             function initCamera(worldWidth, worldDepth) {
 				const camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 1, 20000 );
-				camera.position.y = getY( worldWidth/2, worldDepth/2 ) * 100 + 100;
+                camera.position.y = BOX_SIZE/2;
+                camera.position.z = 10*BOX_SIZE;
                 return camera;
             }
 
@@ -109,34 +117,34 @@
 
                 const matrix = new THREE.Matrix4();
 
-                const pxGeometry = new THREE.PlaneGeometry( 100, 100 );
+                const pxGeometry = new THREE.PlaneGeometry(BOX_SIZE, BOX_SIZE);
                 pxGeometry.attributes.uv.array[ 1 ] = 0.5;
                 pxGeometry.attributes.uv.array[ 3 ] = 0.5;
                 pxGeometry.rotateY( Math.PI / 2 );
-                pxGeometry.translate( 50, 0, 0 );
+                pxGeometry.translate( BOX_SIZE/2, -BOX_SIZE/2, 0 );
 
-                const nxGeometry = new THREE.PlaneGeometry( 100, 100 );
+                const nxGeometry = new THREE.PlaneGeometry( BOX_SIZE, BOX_SIZE );
                 nxGeometry.attributes.uv.array[ 1 ] = 0.5;
                 nxGeometry.attributes.uv.array[ 3 ] = 0.5;
                 nxGeometry.rotateY( - Math.PI / 2 );
-                nxGeometry.translate( - 50, 0, 0 );
+                nxGeometry.translate( -BOX_SIZE/2, -BOX_SIZE/2, 0 );
 
-                const pyGeometry = new THREE.PlaneGeometry( 100, 100 );
+                const pyGeometry = new THREE.PlaneGeometry( BOX_SIZE, BOX_SIZE );
                 pyGeometry.attributes.uv.array[ 5 ] = 0.5;
                 pyGeometry.attributes.uv.array[ 7 ] = 0.5;
                 pyGeometry.rotateX( - Math.PI / 2 );
-                pyGeometry.translate( 0, 50, 0 );
+                pyGeometry.translate( 0, 0, 0 );
 
-                const pzGeometry = new THREE.PlaneGeometry( 100, 100 );
+                const pzGeometry = new THREE.PlaneGeometry( BOX_SIZE, BOX_SIZE );
                 pzGeometry.attributes.uv.array[ 1 ] = 0.5;
                 pzGeometry.attributes.uv.array[ 3 ] = 0.5;
-                pzGeometry.translate( 0, 0, 50 );
+                pzGeometry.translate( 0, -BOX_SIZE/2, BOX_SIZE/2 );
 
-                const nzGeometry = new THREE.PlaneGeometry( 100, 100 );
+                const nzGeometry = new THREE.PlaneGeometry( BOX_SIZE, BOX_SIZE );
                 nzGeometry.attributes.uv.array[ 1 ] = 0.5;
                 nzGeometry.attributes.uv.array[ 3 ] = 0.5;
                 nzGeometry.rotateY( Math.PI );
-                nzGeometry.translate( 0, 0, - 50 );
+                nzGeometry.translate( 0, -BOX_SIZE/2, - BOX_SIZE/2 );
 
                 //
 
@@ -149,9 +157,9 @@
                         const h = getY( x, z );
 
                         matrix.makeTranslation(
-                            x * 100 - worldWidth/2 * 100,
-                            h * 100,
-                            z * 100 - worldDepth/2 * 100
+                            x * BOX_SIZE - worldWidth/2 * BOX_SIZE,
+                            h * BOX_SIZE,
+                            z * BOX_SIZE - worldDepth/2 * BOX_SIZE
                         );
 
                         const px = getY( x + 1, z );
@@ -162,22 +170,18 @@
                         geometries.push( pyGeometry.clone().applyMatrix4( matrix ) );
 
                         if ( ( px !== h && px !== h + 1 ) || x === 0 ) {
-
                             geometries.push( pxGeometry.clone().applyMatrix4( matrix ) );
                         }
 
                         if ( ( nx !== h && nx !== h + 1 ) || x === worldWidth - 1 ) {
-
                             geometries.push( nxGeometry.clone().applyMatrix4( matrix ) );
                         }
 
                         if ( ( pz !== h && pz !== h + 1 ) || z === worldDepth - 1 ) {
-
                             geometries.push( pzGeometry.clone().applyMatrix4( matrix ) );
                         }
 
                         if ( ( nz !== h && nz !== h + 1 ) || z === 0 ) {
-
                             geometries.push( nzGeometry.clone().applyMatrix4( matrix ) );
                         }
                     }
@@ -196,11 +200,11 @@
             function initLights(scene) {
 
                 const ambientLight = new THREE.AmbientLight( 0xcccccc );
-                scene.add( ambientLight );
+                scene.add(ambientLight);
 
                 const directionalLight = new THREE.DirectionalLight( 0xffffff, 2 );
                 directionalLight.position.set( 1, 1, 0.5 ).normalize();
-                scene.add( directionalLight );
+                scene.add(directionalLight);
             }
 
             function initRenderer(container) {
@@ -230,25 +234,88 @@
                 camera.aspect = window.innerWidth / window.innerHeight;
                 camera.updateProjectionMatrix();
 
-                renderer.setSize( window.innerWidth, window.innerHeight );
+                renderer.setSize(window.innerWidth, window.innerHeight);
 
                 controls.handleResize();
             }
 
+            function initWebsocket() {
+                return new Promise((ok, ko) => {
+                    let ws = new WebSocket("ws://127.0.0.1:8080/ws");
+                    ws.onopen = () => ok(ws);
+                })
+
+                // ws.onopen = function(e) {
+                //     socket.send("test");
+                // };
+
+                // ws.onmessage = function(event) {
+                //     console.log(`[message] Data received from server: ${event.data}`);
+                // };
+
+                // socket.onclose = function(event) {
+                //     if (event.wasClean) {
+                //         alert(`[close] Connection closed cleanly, code=${event.code} reason=${event.reason}`);
+                //     } else {
+                //         // par exemple : processus serveur arrêté ou réseau en panne
+                //         // event.code est généralement 1006 dans ce cas
+                //         alert('[close] Connection died');
+                //     }
+                // };
+
+                // socket.onerror = function(error) {
+                //     alert(`[error]`);
+                // };
+
+                // return ws
+            }
+
+            function syncBody(state) {
+                const { id, pos } = state
+                if(bodies[id] === undefined) {
+                    const geometry = new THREE.BoxGeometry( BOX_SIZE, BOX_SIZE, BOX_SIZE );
+                    const material = new THREE.MeshBasicMaterial( {color: 0xff0000} );
+                    const cube = new THREE.Mesh(geometry, material);
+                    scene.add(cube);
+                    bodies[id] = cube;
+                }
+                const cube = bodies[id]
+                cube.position.set(pos[0]*BOX_SIZE, pos[1]*BOX_SIZE, pos[2]*BOX_SIZE)
+            }
+
 			//
 
+            let count = 0
 			function animate() {
 
 				requestAnimationFrame( animate );
 
+                requestFrameData().then(frameData => {
+                    if(frameData.step % 100 === 0) {
+                        const { id, pos } = frameData.bodies[0]
+                        console.log("time", frameData.time)
+                    }
+                    frameData.bodies.forEach(syncBody)
+                })
 				render();
 				stats.update();
 			}
+
+            function requestFrameData() {
+                return new Promise((ok, ko) => {
+                    websocket.onmessage = function(evt) {
+                        ok(JSON.parse(evt.data))
+                    }
+                    websocket.send("UPD:1")
+                })
+            }
 
 			function render() {
 				controls.update( clock.getDelta() );
 				renderer.render( scene, camera );
 			}
+
+            main()
 
 		</script>
 	</body>
