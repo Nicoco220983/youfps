@@ -1,10 +1,11 @@
 use std::{
-    time::Duration,
+    time::{Duration, Instant},
     path::PathBuf,
     sync::RwLock,
 };
 use serde_json as json;
 
+use actix::prelude::*;
 use actix::{Actor, StreamHandler};
 use actix_web::{web, Error, HttpRequest, HttpResponse, HttpServer, App};
 use actix_web_actors::ws;
@@ -13,6 +14,9 @@ use actix_rt;
 
 use rapier3d;
 use rapier3d::prelude::*;
+
+// const WS_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+// const WS_CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 // Static files
 
@@ -30,27 +34,55 @@ async fn static_route(req: HttpRequest) -> Result<NamedFile, Error> {
 /// Player Websocket
 
 struct PlayerWs {
+    // hb: Instant,
     app_state: web::Data<RwLock<AppState>>,
 }
 
 impl Actor for PlayerWs {
     type Context = ws::WebsocketContext<Self>;
+
+    // fn started(&mut self, ctx: &mut Self::Context) {
+    //     ctx.run_interval(WS_HEARTBEAT_INTERVAL, |act, ctx| {
+    //         if Instant::now().duration_since(act.hb) > WS_CLIENT_TIMEOUT {
+    //             println!("Websocket timed out!");
+    //             ctx.stop();
+    //         } else {
+    //             ctx.ping("".as_bytes());
+    //         }
+    //     });
+    // }
+
+    // fn stopping(&mut self, ctx: &mut Self::Context) -> Running {
+    //     println!("Websocket stopped");
+    //     Running::Stop
+    // }
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for PlayerWs {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        if let Ok(ws::Message::Text(text)) = msg {
-            if let Some(idx) = text.find(':') {
-                if let Some(key) = text.get(..idx) {
-                    let res = match key {
-                        "UPD" => self.handle_update_request(),
-                        _ => None,
-                    };
-                    if let Some(res_text) = res {
-                        ctx.text(res_text)
-                    };
+        match msg {
+            // Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
+            // Ok(ws::Message::Pong(_)) => self.hb = Instant::now(),
+            Ok(ws::Message::Text(text)) => {
+                if let Some(idx) = text.find(':') {
+                    if let Some(key) = text.get(..idx) {
+                        let res = match key {
+                            "UPD" => self.handle_update_request(),
+                            _ => None,
+                        };
+                        if let Some(res_text) = res {
+                            ctx.text(res_text)
+                        };
+                    }
                 }
             }
+            Ok(ws::Message::Close(_reason)) => {
+                let mut data_w = self.app_state.write().unwrap();
+                data_w.nb_players -= 1;
+                println!("Player quit => {}", data_w.nb_players);
+                ctx.stop();
+            }
+            _ => (),
         }
     }
 }
@@ -63,8 +95,14 @@ impl PlayerWs {
 }
 
 async fn websocket_route(req: HttpRequest, stream: web::Payload, app_state: web::Data<RwLock<AppState>>) -> Result<HttpResponse, Error> {
+    {
+        let mut data_w = app_state.write().unwrap();
+        data_w.nb_players += 1;
+        println!("New player => {}", data_w.nb_players);
+    }
     let resp = ws::start(PlayerWs {
-        app_state: app_state
+        // hb: Instant::now(),
+        app_state: app_state,
     }, &req, stream);
     // println!("{:?}", resp);
     resp
@@ -165,6 +203,7 @@ impl PhysicEngine {
 // App
 
 struct AppState {
+    nb_players: u32,
     game_state: String,
 }
 
@@ -174,7 +213,8 @@ async fn main() -> std::io::Result<()> {
     const PORT: u16 = 8080;
 
     let app_state = web::Data::new(RwLock::new(AppState {
-        game_state: String::from("")
+        nb_players: 0,
+        game_state: String::from(""),
     }));
 
     let mut physic_engine = PhysicEngine::create();
